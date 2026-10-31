@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workspaceFilter version="1.0">
+    <filter root="/conf/kp-claims" mode="merge"/>
+    <filter root="/content/kp-claims" mode="merge"/>
+    <filter root="/content/dam/kp-claims" mode="merge">
+        <exclude pattern="/content/dam/kp-claims(/.*)?"/>
+        <include pattern="/content/dam/kp-claims/jcr:content(/.*)?"/>
+    </filter>
+    <filter root="/content/dam/kp-claims/asset.jpg" mode="merge"/>
+    <filter root="/content/experience-fragments/kp-claims" mode="merge"/>
+</workspaceFilter>

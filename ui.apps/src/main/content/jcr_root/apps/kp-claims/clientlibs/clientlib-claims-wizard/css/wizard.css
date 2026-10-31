@@ -1,0 +1,13 @@
+.claims-wizard-card { background: #ffffff; padding: 20px; max-width: 650px; margin: 20px auto; border-top: 4px solid #005A9C; font-family: sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.subtitle { color: #666; font-size: 13px; margin-top: -8px; }
+.tabs { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid #ddd; }
+.tab-btn { background: none; border: none; padding: 8px 12px; cursor: pointer; font-weight: bold; color: #777; }
+.tab-btn.active { color: #005A9C; border-bottom: 2px solid #005A9C; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px; }
+.form-grid label { display: block; font-size: 11px; font-weight: bold; color: #333; margin-bottom: 4px; }
+.form-grid input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+.submit-btn { background: #005A9C; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; }
+.hidden { display: none; }
+.result-box { margin-top: 15px; padding: 12px; background: #e8f5e9; border-left: 4px solid #2e7d32; font-size: 14px; }
+.dropzone { border: 2px dashed #005A9C; padding: 30px; text-align: center; background: #f9fbfd; cursor: pointer; }
+.batch-status-box { margin-top: 15px; padding: 12px; background: #f1f8e9; border: 1px solid #c5e1a5; font-size: 13px; }

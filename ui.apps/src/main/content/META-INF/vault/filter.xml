@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workspaceFilter version="1.0">
+    <filter root="/apps/kp-claims/clientlibs"/>
+    <filter root="/apps/kp-claims/components"/>
+    <filter root="/apps/kp-claims/i18n"/>
+</workspaceFilter>
