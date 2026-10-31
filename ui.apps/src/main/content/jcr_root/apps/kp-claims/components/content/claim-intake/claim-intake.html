@@ -14,13 +14,61 @@
     limitations under the License.
 */-->
 <!-- Load the specific claims wizard styles and JS scripts -->
+<!-- Load the visual styling and interaction scripts from our ClientLibrary -->
 <sly data-sly-use.clientlib="/libs/granite/sightly/templates/clientlib.html"
      data-sly-call="${clientlib.all @ categories='kp.claims.wizard'}"/>
 
 <div class="kp-claims-wizard-container">
-    <div id="abc-claims-app-root">
-        <div class="wizard-loading" style="padding: 20px; background: #f5f5f5; border: 1px dashed #005A9C; font-family: sans-serif; font-weight: bold; color: #005A9C;">
-            Initializing KP Claims Portal...
+    <div class="claims-wizard-card">
+        <h2>KP Claims Processing Dashboard</h2>
+        <p class="subtitle">Cloud-Safe Adjudication Vector Demo (HTL Powered)</p>
+
+        <div class="tabs">
+            <button class="tab-btn active" id="tab-single" type="button">Single Claim Evaluation</button>
+            <button class="tab-btn" id="tab-batch" type="button">700k High-Volume Stream</button>
+        </div>
+
+        <!-- Single Claim Evaluation Form Panel -->
+        <div id="panel-single" class="tab-panel">
+            <form id="realtime-claim-form">
+                <div class="form-grid">
+                    <div>
+                        <label for="policyId">Policy ID</label>
+                        <input type="text" id="policyId" value="100001" required>
+                    </div>
+                    <div>
+                        <label for="policyHolderId">Policy Holder ID</label>
+                        <input type="text" id="policyHolderId" value="1000011" required>
+                    </div>
+                    <div>
+                        <label for="billedAmount">Billed Amount ($)</label>
+                        <input type="number" id="billedAmount" value="4000" step="0.01" required>
+                    </div>
+                    <div>
+                        <label for="ruleString">Coverage Rule String</label>
+                        <input type="text" id="ruleString" value="40% AFTER DEDUCTIBLE" required>
+                    </div>
+                    <div>
+                        <label for="currentInd">Current Ind. Accumulated ($)</label>
+                        <input type="number" id="currentInd" value="2000" step="0.01" required>
+                    </div>
+                    <div>
+                        <label for="currentFam">Current Fam. Accumulated ($)</label>
+                        <input type="number" id="currentFam" value="2000" step="0.01" required>
+                    </div>
+                </div>
+                <button type="submit" class="submit-btn">Execute Stateless Engine</button>
+            </form>
+            <div id="api-result-output" class="result-box hidden"></div>
+        </div>
+
+        <!-- Batch Streaming Pipeline Panel -->
+        <div id="panel-batch" class="tab-panel hidden">
+            <div class="dropzone" id="csv-dropzone">
+                <p>Drag & drop transaction log CSV here to request Presigned URL</p>
+                <input type="file" id="batch-file-input" accept=".csv" style="display:none">
+            </div>
+            <div id="batch-status" class="batch-status-box hidden"></div>
         </div>
     </div>
 </div>
