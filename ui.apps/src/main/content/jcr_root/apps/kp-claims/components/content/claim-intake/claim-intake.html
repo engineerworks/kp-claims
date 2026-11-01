@@ -21,12 +21,12 @@
 <div class="kp-claims-wizard-container">
     <div class="claims-wizard-card">
         <h2>KP Claims Processing Dashboard</h2>
-        <p class="subtitle">Cloud-Safe Adjudication Vector Demo (HTL Powered)</p>
-
+        <p class="subtitle">Claims Transaction Processing</p>
         <div class="tabs">
             <button class="tab-btn active" id="tab-single" type="button">Single Claim Evaluation</button>
-            <button class="tab-btn" id="tab-batch" type="button">700k High-Volume Stream</button>
-        </div>
+            <button class="tab-btn" id="tab-batch" type="button">Batch Claim Processing
+            </button>
+           </div>
 
         <!-- Single Claim Evaluation Form Panel -->
         <div id="panel-single" class="tab-panel">
@@ -70,12 +70,28 @@
         </div>
 
         <!-- Batch Streaming Pipeline Panel -->
+        <!-- Batch Claim Processing Panel -->
         <div id="panel-batch" class="tab-panel hidden">
-            <div class="dropzone" id="csv-dropzone">
-                <p>Drag & drop transaction log CSV here to request Presigned URL</p>
-                <input type="file" id="batch-file-input" accept=".csv" style="display:none">
+
+            <div class="batch-introduction">
+                <h3>Process a Transaction CSV</h3>
+                <p>Select an input transaction CSV. Claims will be processed in their original order and the processed CSV will download automatically.</p>
             </div>
-            <div id="batch-status" class="batch-status-box hidden"></div>
+
+            <div class="dropzone" id="csv-dropzone" role="button" tabindex="0" aria-label="Choose a transaction CSV">
+
+                <p>Drag and drop a CSV here or click to choose a file</p>
+
+                <p id="selected-file-name" class="selected-file-name">No file selected</p>
+
+                <input type="file" id="batch-file-input" accept=".csv,text/csv" style="display:none">
+            </div>
+
+            <button id="process-batch-button" type="button" class="submit-btn" disabled>Process and Download CSV
+            </button>
+
+            <div id="batch-status" class="batch-status-box hidden" aria-live="polite"></div>
+
         </div>
     </div>
 </div>

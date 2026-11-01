@@ -1,132 +1,632 @@
 (function () {
     "use strict";
 
-    // Helper utility to safely fetch a valid security token from AEM's framework
-    function fetchCSRFToken(callback) {
-        fetch("/libs/granite/csrf/token.json")
-            .then(res => res.json())
-            .then(data => {
-                if (data && data.token) {
-                    callback(data.token);
-                } else {
-                    callback("");
+    function fetchCSRFToken() {
+        return fetch("/libs/granite/csrf/token.json", {
+            credentials: "same-origin"
+        })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error(
+                        "Unable to retrieve the AEM CSRF token."
+                    );
                 }
+
+                return response.json();
             })
-            .catch(() => callback(""));
+            .then(function (data) {
+                if (!data || !data.token) {
+                    throw new Error(
+                        "AEM did not return a CSRF token."
+                    );
+                }
+
+                return data.token;
+            });
     }
 
-    function setupEventListeners() {
-        const tabSingle = document.getElementById("tab-single");
-        const tabBatch = document.getElementById("tab-batch");
-        const panelSingle = document.getElementById("panel-single");
-        const panelBatch = document.getElementById("panel-batch");
+    function setActivePanel(
+        selectedTab,
+        selectedPanel,
+        otherTab,
+        otherPanel
+    ) {
+        selectedTab.classList.add("active");
+        selectedPanel.classList.remove("hidden");
 
-        if (tabSingle && tabBatch) {
-            tabSingle.addEventListener("click", function() {
-                tabSingle.classList.add("active"); tabBatch.classList.remove("active");
-                panelSingle.classList.remove("hidden"); panelBatch.classList.add("hidden");
-            });
+        otherTab.classList.remove("active");
+        otherPanel.classList.add("hidden");
+    }
 
-            tabBatch.addEventListener("click", function() {
-                tabBatch.classList.add("active"); tabSingle.classList.remove("active");
-                panelBatch.classList.remove("hidden"); panelSingle.classList.add("hidden");
-            });
+    function setupTabs() {
+        var tabSingle =
+            document.getElementById("tab-single");
+
+        var tabBatch =
+            document.getElementById("tab-batch");
+
+        var panelSingle =
+            document.getElementById("panel-single");
+
+        var panelBatch =
+            document.getElementById("panel-batch");
+
+        if (!tabSingle
+            || !tabBatch
+            || !panelSingle
+            || !panelBatch) {
+
+            return;
         }
 
-        const claimForm = document.getElementById("realtime-claim-form");
-        if (claimForm) {
-            claimForm.addEventListener("submit", function (e) {
-                e.preventDefault();
-                const box = document.getElementById("api-result-output");
-                box.classList.remove("hidden");
-                box.innerText = "Evaluating transaction...";
+        tabSingle.addEventListener(
+            "click",
+            function () {
+                setActivePanel(
+                    tabSingle,
+                    panelSingle,
+                    tabBatch,
+                    panelBatch
+                );
+            }
+        );
 
-                const payload = {
+        tabBatch.addEventListener(
+            "click",
+            function () {
+                setActivePanel(
+                    tabBatch,
+                    panelBatch,
+                    tabSingle,
+                    panelSingle
+                );
+            }
+        );
+    }
+
+    function setupSingleClaimForm() {
+        var claimForm =
+            document.getElementById(
+                "realtime-claim-form"
+            );
+
+        if (!claimForm) {
+            return;
+        }
+
+        claimForm.addEventListener(
+            "submit",
+            function (event) {
+                event.preventDefault();
+
+                var resultBox =
+                    document.getElementById(
+                        "api-result-output"
+                    );
+
+                resultBox.classList.remove("hidden");
+                resultBox.textContent =
+                    "Evaluating transaction...";
+
+                var payload = {
                     claim: {
-                        policyId: document.getElementById("policyId").value,
-                        policyHolderId: document.getElementById("policyHolderId").value,
-                        billedAmount: parseFloat(document.getElementById("billedAmount").value),
-                        mainCategory: "Inpatient Hospital Care",
-                        subCategory: "SURGERY",
-                        dateOfService: "2016-05-08"
+                        policyId:
+                            document.getElementById(
+                                "policyId"
+                            ).value.trim(),
+
+                        policyHolderId:
+                            document.getElementById(
+                                "policyHolderId"
+                            ).value.trim(),
+
+                        billedAmount:
+                            parseFloat(
+                                document.getElementById(
+                                    "billedAmount"
+                                ).value
+                            ),
+
+                        mainCategory:
+                            "Inpatient Hospital Care",
+
+                        subCategory:
+                            "SURGERY",
+
+                        dateOfService:
+                            "2016-05-08"
                     },
+
                     policy: {
                         planId: "P001",
-                        individualThreshold: 6000.0,
-                        familyThreshold: 12000.0,
-                        currentIndividualAccumulated: parseFloat(document.getElementById("currentInd").value),
-                        currentFamilyAccumulated: parseFloat(document.getElementById("currentFam").value),
+
+                        individualThreshold:
+                            6000.0,
+
+                        familyThreshold:
+                            12000.0,
+
+                        currentIndividualAccumulated:
+                            parseFloat(
+                                document.getElementById(
+                                    "currentInd"
+                                ).value
+                            ),
+
+                        currentFamilyAccumulated:
+                            parseFloat(
+                                document.getElementById(
+                                    "currentFam"
+                                ).value
+                            ),
+
                         isActive: true
                     },
-                    rule: document.getElementById("ruleString").value
+
+                    rule:
+                    document.getElementById(
+                        "ruleString"
+                    ).value
                 };
 
-                // Fetch CSRF token immediately prior to submitting execution payload
-                fetchCSRFToken(function(token) {
-                    fetch("/bin/kp/claims/process", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            "CSRF-Token": token // Attaches token validation signature
-                        },
-                        body: JSON.stringify(payload)
+                fetchCSRFToken()
+                    .then(function (token) {
+                        return fetch(
+                            "/bin/kp/claims/process",
+                            {
+                                method: "POST",
+
+                                credentials:
+                                    "same-origin",
+
+                                headers: {
+                                    "Content-Type":
+                                        "application/json",
+
+                                    "CSRF-Token":
+                                    token
+                                },
+
+                                body:
+                                    JSON.stringify(
+                                        payload
+                                    )
+                            }
+                        );
                     })
-                        .then(res => res.json())
-                        .then(data => {
-                            box.innerHTML = `
-                            <strong style="color:#2e7d32">Adjudication Complete:</strong><br/>
-                            Plan Pays: $${data.planPays.toFixed(2)} | Patient Pays: $${data.policyHolderPays.toFixed(2)}<br/>
-                            <small>${data.processingMessage}</small>
-                        `;
-                        })
-                        .catch(() => {
-                            box.innerText = "Error contacting calculation service.";
-                        });
-                });
-            });
-        }
+                    .then(function (response) {
+                        return response.json()
+                            .then(function (data) {
+                                if (!response.ok) {
+                                    throw new Error(
+                                        data.error
+                                        || "Claim processing failed."
+                                    );
+                                }
 
-        const dropzone = document.getElementById("csv-dropzone");
-        const fileInput = document.getElementById("batch-file-input");
-        const statusBox = document.getElementById("batch-status");
+                                return data;
+                            });
+                    })
+                    .then(function (data) {
+                        if (data.errorCode) {
+                            resultBox.textContent =
+                                data.errorCode
+                                + ": "
+                                + data.errorMessage;
 
-        if (dropzone && fileInput) {
-            dropzone.addEventListener("click", () => fileInput.click());
-
-            fileInput.addEventListener("change", function (e) {
-                if (!e.target.files.length) return;
-                const file = e.target.files[0];
-                statusBox.classList.remove("hidden");
-                statusBox.innerText = "Requesting cloud streaming configuration proxy from AEM...";
-
-                fetchCSRFToken(function(token) {
-                    fetch("/bin/kp/claims/upload-url?fileName=" + encodeURIComponent(file.name), {
-                        method: "POST",
-                        headers: {
-                            "CSRF-Token": token // Attaches token validation signature
+                            return;
                         }
+
+                        resultBox.innerHTML =
+                            "<strong>"
+                            + "Adjudication Complete"
+                            + "</strong><br>"
+                            + "Plan Pays: $"
+                            + Number(
+                                data.planPays
+                            ).toFixed(2)
+                            + "<br>"
+                            + "Policyholder Pays: $"
+                            + Number(
+                                data.policyHolderPays
+                            ).toFixed(2)
+                            + "<br>"
+                            + "<small>"
+                            + escapeHtml(
+                                data.processingMessage
+                                || ""
+                            )
+                            + "</small>";
                     })
-                        .then(res => res.json())
-                        .then(data => {
-                            statusBox.innerHTML = `
-                            <p style="color:#005A9C"><strong>Proxy URL Acquired:</strong> Secure handshake complete.</p>
-                            <p style="word-break:break-all; font-size:11px; background:#fff; padding:6px; border:1px solid #ddd; max-height: 80px; overflow-y: auto;">
-                                ${data.uploadUrl}
-                            </p>
-                            <p style="color:#2e7d32"><strong>Success:</strong> File streamed directly to target cloud bucket location. AEM JVM heap allocation: 0 bytes.</p>
-                        `;
-                        })
-                        .catch(() => {
-                            statusBox.innerText = "Error executing cloud proxy registration handler.";
-                        });
-                });
-            });
-        }
+                    .catch(function (error) {
+                        resultBox.textContent =
+                            error.message;
+                    });
+            }
+        );
     }
 
-    if (document.readyState === "complete" || document.readyState === "interactive") {
-        setupEventListeners();
+    function setupBatchProcessing() {
+        var dropzone =
+            document.getElementById(
+                "csv-dropzone"
+            );
+
+        var fileInput =
+            document.getElementById(
+                "batch-file-input"
+            );
+
+        var selectedFileName =
+            document.getElementById(
+                "selected-file-name"
+            );
+
+        var processButton =
+            document.getElementById(
+                "process-batch-button"
+            );
+
+        var statusBox =
+            document.getElementById(
+                "batch-status"
+            );
+
+        if (!dropzone
+            || !fileInput
+            || !processButton
+            || !statusBox) {
+
+            return;
+        }
+
+        function selectFile(file) {
+            if (!file) {
+                return;
+            }
+
+            if (!file.name.toLowerCase()
+                .endsWith(".csv")) {
+
+                fileInput.value = "";
+                processButton.disabled = true;
+
+                selectedFileName.textContent =
+                    "Only CSV files are supported.";
+
+                showBatchStatus(
+                    statusBox,
+                    "error",
+                    "Please select a valid .csv file."
+                );
+
+                return;
+            }
+
+            if (file.size <= 0) {
+                fileInput.value = "";
+                processButton.disabled = true;
+
+                showBatchStatus(
+                    statusBox,
+                    "error",
+                    "The selected CSV file is empty."
+                );
+
+                return;
+            }
+
+            if (file.size > 10 * 1024 * 1024) {
+                fileInput.value = "";
+                processButton.disabled = true;
+
+                showBatchStatus(
+                    statusBox,
+                    "error",
+                    "The selected file exceeds "
+                    + "the 10 MB demo limit."
+                );
+
+                return;
+            }
+
+            selectedFileName.textContent =
+                file.name
+                + " ("
+                + formatFileSize(file.size)
+                + ")";
+
+            processButton.disabled = false;
+
+            showBatchStatus(
+                statusBox,
+                "ready",
+                "File selected. "
+                + "Click Process and Download CSV."
+            );
+        }
+
+        dropzone.addEventListener(
+            "click",
+            function () {
+                fileInput.click();
+            }
+        );
+
+        dropzone.addEventListener(
+            "keydown",
+            function (event) {
+                if (event.key === "Enter"
+                    || event.key === " ") {
+
+                    event.preventDefault();
+                    fileInput.click();
+                }
+            }
+        );
+
+        fileInput.addEventListener(
+            "change",
+            function () {
+                selectFile(
+                    fileInput.files[0]
+                );
+            }
+        );
+
+        dropzone.addEventListener(
+            "dragover",
+            function (event) {
+                event.preventDefault();
+                dropzone.classList.add(
+                    "drag-active"
+                );
+            }
+        );
+
+        dropzone.addEventListener(
+            "dragleave",
+            function () {
+                dropzone.classList.remove(
+                    "drag-active"
+                );
+            }
+        );
+
+        dropzone.addEventListener(
+            "drop",
+            function (event) {
+                event.preventDefault();
+
+                dropzone.classList.remove(
+                    "drag-active"
+                );
+
+                var files =
+                    event.dataTransfer.files;
+
+                if (!files || !files.length) {
+                    return;
+                }
+
+                /*
+                 * Assigning DataTransfer files to an input is supported
+                 * by modern browsers used for the local demo.
+                 */
+                fileInput.files = files;
+                selectFile(files[0]);
+            }
+        );
+
+        processButton.addEventListener(
+            "click",
+            function () {
+                var file =
+                    fileInput.files[0];
+
+                if (!file) {
+                    showBatchStatus(
+                        statusBox,
+                        "error",
+                        "Choose a CSV file first."
+                    );
+
+                    return;
+                }
+
+                processButton.disabled = true;
+                processButton.textContent =
+                    "Processing...";
+
+                showBatchStatus(
+                    statusBox,
+                    "processing",
+                    "Uploading and processing "
+                    + file.name
+                    + "..."
+                );
+
+                var formData =
+                    new FormData();
+
+                formData.append(
+                    "file",
+                    file,
+                    file.name
+                );
+
+                fetchCSRFToken()
+                    .then(function (token) {
+                        return fetch(
+                            "/bin/kp/claims/batch-process",
+                            {
+                                method: "POST",
+
+                                credentials:
+                                    "same-origin",
+
+                                headers: {
+                                    "CSRF-Token":
+                                    token
+                                },
+
+                                body: formData
+                            }
+                        );
+                    })
+                    .then(function (response) {
+                        var contentType =
+                            response.headers.get(
+                                "Content-Type"
+                            ) || "";
+
+                        if (!response.ok) {
+                            if (contentType.indexOf(
+                                "application/json"
+                            ) !== -1) {
+
+                                return response.json()
+                                    .then(function (data) {
+                                        throw new Error(
+                                            data.error
+                                            || "Batch processing failed."
+                                        );
+                                    });
+                            }
+
+                            return response.text()
+                                .then(function (text) {
+                                    throw new Error(
+                                        text
+                                        || "Batch processing failed."
+                                    );
+                                });
+                        }
+
+                        return response.blob();
+                    })
+                    .then(function (csvBlob) {
+                        if (!csvBlob
+                            || csvBlob.size === 0) {
+
+                            throw new Error(
+                                "The server returned "
+                                + "an empty CSV."
+                            );
+                        }
+
+                        downloadBlob(
+                            csvBlob,
+                            "output_claims.csv"
+                        );
+
+                        showBatchStatus(
+                            statusBox,
+                            "success",
+                            "Processing completed. "
+                            + "output_claims.csv "
+                            + "has been downloaded."
+                        );
+                    })
+                    .catch(function (error) {
+                        showBatchStatus(
+                            statusBox,
+                            "error",
+                            error.message
+                        );
+                    })
+                    .finally(function () {
+                        processButton.disabled = false;
+
+                        processButton.textContent =
+                            "Process and Download CSV";
+                    });
+            }
+        );
+    }
+
+    function downloadBlob(blob, fileName) {
+        var downloadUrl =
+            URL.createObjectURL(blob);
+
+        var anchor =
+            document.createElement("a");
+
+        anchor.href = downloadUrl;
+        anchor.download = fileName;
+
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+
+        window.setTimeout(
+            function () {
+                URL.revokeObjectURL(
+                    downloadUrl
+                );
+            },
+            1000
+        );
+    }
+
+    function showBatchStatus(
+        statusBox,
+        status,
+        message
+    ) {
+        statusBox.classList.remove(
+            "hidden",
+            "status-ready",
+            "status-processing",
+            "status-success",
+            "status-error"
+        );
+
+        statusBox.classList.add(
+            "status-" + status
+        );
+
+        statusBox.textContent = message;
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes < 1024) {
+            return bytes + " bytes";
+        }
+
+        if (bytes < 1024 * 1024) {
+            return (
+                bytes / 1024
+            ).toFixed(1) + " KB";
+        }
+
+        return (
+            bytes / (1024 * 1024)
+        ).toFixed(1) + " MB";
+    }
+
+    function escapeHtml(value) {
+        var div =
+            document.createElement("div");
+
+        div.textContent =
+            value == null ? "" : String(value);
+
+        return div.innerHTML;
+    }
+
+    function initialize() {
+        setupTabs();
+        setupSingleClaimForm();
+        setupBatchProcessing();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener(
+            "DOMContentLoaded",
+            initialize
+        );
     } else {
-        document.addEventListener("DOMContentLoaded", setupEventListeners);
+        initialize();
     }
 })();
