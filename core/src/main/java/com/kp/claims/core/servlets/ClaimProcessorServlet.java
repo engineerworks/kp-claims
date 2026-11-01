@@ -2,141 +2,362 @@ package com.kp.claims.core.servlets;
 
 import com.google.gson.Gson;
 import com.kp.claims.core.models.ClaimInput;
-import com.kp.claims.core.models.PolicyState;
 import com.kp.claims.core.models.ClaimOutput;
+import com.kp.claims.core.models.PolicyState;
 import com.kp.claims.core.services.ClaimEngineService;
+import com.kp.claims.core.services.CoverageRuleService;
+
 import org.apache.sling.api.SlingHttpServletRequest;
 import org.apache.sling.api.SlingHttpServletResponse;
-import org.apache.sling.api.servlets.SlingAllMethodsServlet;
 import org.apache.sling.api.servlets.HttpConstants;
-import org.osgi.service.component.annotations.Component;
+import org.apache.sling.api.servlets.SlingAllMethodsServlet;
+
 import org.osgi.framework.Constants;
+import org.osgi.service.component.annotations.Component;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.servlet.Servlet;
 import javax.servlet.ServletException;
-import java.io.IOException;
+
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
-@Component(service = Servlet.class,
+@Component(
+        service = Servlet.class,
         property = {
-                Constants.SERVICE_DESCRIPTION + "=KP Claims Firebase Microservice Adjudication API",
-                "sling.servlet.methods=" + HttpConstants.METHOD_POST,
-                "sling.servlet.paths=" + "/bin/kp/claims/process"
-        })
-public class ClaimProcessorServlet extends SlingAllMethodsServlet {
+                Constants.SERVICE_DESCRIPTION
+                        + "=KP Claims Real-Time Adjudication API",
+                "sling.servlet.methods="
+                        + HttpConstants.METHOD_POST,
+                "sling.servlet.paths="
+                        + "/bin/kp/claims/process"
+        }
+)
+public class ClaimProcessorServlet
+        extends SlingAllMethodsServlet {
+
     private static final Logger LOGGER =
-            LoggerFactory.getLogger(ClaimProcessorServlet.class);
-    private final Gson gson = new Gson();
-    private final ClaimEngineService engine = new ClaimEngineService();
+            LoggerFactory.getLogger(
+                    ClaimProcessorServlet.class);
 
-    // Live Cloud REST API Connection endpoint configuration mapping
-    private static final String FIREBASE_URL = "https://kp-claims-processing-default-rtdb.asia-southeast1.firebasedatabase.app";
+    private static final String FIREBASE_URL =
+            "https://kp-claims-processing-default-rtdb"
+                    + ".asia-southeast1.firebasedatabase.app";
 
+    private final Gson gson =
+            new Gson();
+
+    private final ClaimEngineService engine =
+            new ClaimEngineService();
+
+    private final CoverageRuleService coverageRuleService =
+            new CoverageRuleService();
 
     @Override
-    protected void doPost(SlingHttpServletRequest request, SlingHttpServletResponse response)
+    protected void doPost(
+            SlingHttpServletRequest request,
+            SlingHttpServletResponse response)
             throws ServletException, IOException {
 
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
 
         try {
-            // 1. Extract the network stream JSON data
-            StringBuilder sb = new StringBuilder();
+
+            StringBuilder requestBody =
+                    new StringBuilder();
+
             String line;
-            try (BufferedReader reader = request.getReader()) {
+
+            try (
+                    BufferedReader reader =
+                            request.getReader()
+            ) {
                 while ((line = reader.readLine()) != null) {
-                    sb.append(line);
+                    requestBody.append(line);
                 }
             }
 
-            ClaimRequestWrapper requestData = gson.fromJson(sb.toString(), ClaimRequestWrapper.class);
-            if (requestData == null ||
-                    requestData.claim == null ||
-                    requestData.policy == null ||
-                    requestData.rule == null ||
-                    requestData.rule.trim().isEmpty()) {
+            ClaimRequestWrapper requestData =
+                    gson.fromJson(
+                            requestBody.toString(),
+                            ClaimRequestWrapper.class);
+
+            if (requestData == null
+                    || requestData.claim == null
+                    || requestData.policy == null) {
 
                 response.setStatus(
                         SlingHttpServletResponse.SC_BAD_REQUEST);
 
                 response.getWriter().write(
-                        "{\"error\":\"claim, policy and rule are required\"}");
+                        "{\"error\":"
+                                + "\"claim and policy are required\"}");
 
                 return;
             }
 
-            String targetHolderId = requestData.claim.policyHolderId;
+            ClaimInput claim =
+                    requestData.claim;
 
+            PolicyState requestPolicy =
+                    requestData.policy;
+
+            /*
+             * Firebase is still used to verify that the policyholder
+             * exists and to retrieve the policyholder's stored
+             * policy information.
+             */
             PolicyState cloudPolicyState =
-                    fetchPolicyFromFirebase(targetHolderId);
+                    fetchPolicyFromFirebase(
+                            claim.policyHolderId);
 
-            if (cloudPolicyState != null && requestData.policy != null) {
-                cloudPolicyState.currentIndividualAccumulated =
-                        requestData.policy.currentIndividualAccumulated;
+            /*
+             * A missing Firebase policy continues to flow to
+             * ClaimEngineService so that the existing E0001
+             * business error is returned.
+             */
+            if (cloudPolicyState == null) {
 
-                cloudPolicyState.currentFamilyAccumulated =
-                        requestData.policy.currentFamilyAccumulated;
+                ClaimOutput output =
+                        engine.processClaim(
+                                claim,
+                                null,
+                                "");
+
+                response.getWriter().write(
+                        gson.toJson(output));
+
+                return;
+            }
+
+            /*
+             * Assignment requirement:
+             *
+             * Real-time callers supply the individual and family
+             * accumulated deductible values.
+             */
+            cloudPolicyState.currentIndividualAccumulated =
+                    requestPolicy.currentIndividualAccumulated;
+
+            cloudPolicyState.currentFamilyAccumulated =
+                    requestPolicy.currentFamilyAccumulated;
+
+            /*
+             * Use Firebase planId as the authoritative plan
+             * assignment when available.
+             */
+            String planId =
+                    cloudPolicyState.planId;
+
+            if (planId == null
+                    || planId.trim().isEmpty()) {
+
+                planId = requestPolicy.planId;
+            }
+
+            /*
+             * Resolve the coverage rule from PlanCoverage.
+             *
+             * The caller no longer supplies the coverage rule.
+             */
+            String coverageRule =
+                    coverageRuleService.findRule(
+                            planId,
+                            claim.mainCategory,
+                            claim.subCategory);
+
+            if (coverageRule == null
+                    || coverageRule.trim().isEmpty()) {
+
+                ClaimOutput output =
+                        createCoverageRuleError(claim);
+
+                response.getWriter().write(
+                        gson.toJson(output));
+
+                return;
             }
 
             ClaimOutput output =
                     engine.processClaim(
-                            requestData.claim,
+                            claim,
                             cloudPolicyState,
-                            requestData.rule);
-            // 4. Return the computed data array layout to the AEM user dashboard
-            response.getWriter().write(gson.toJson(output));
+                            coverageRule);
+
+            response.getWriter().write(
+                    gson.toJson(output));
 
         } catch (Exception e) {
-            response.setStatus(SlingHttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            response.getWriter().write("{\"error\": \"System processing exception: " + e.getMessage() + "\"}");
+
+            LOGGER.error(
+                    "Real-time claim processing failed",
+                    e);
+
+            response.setStatus(
+                    SlingHttpServletResponse
+                            .SC_INTERNAL_SERVER_ERROR);
+
+            response.getWriter().write(
+                    "{\"error\":"
+                            + "\"Unable to process claim\"}");
         }
     }
 
-    private PolicyState fetchPolicyFromFirebase(String holderId) {
+    private PolicyState fetchPolicyFromFirebase(
+            String holderId) {
+
+        if (holderId == null
+                || holderId.trim().isEmpty()) {
+
+            return null;
+        }
+
+        HttpURLConnection connection =
+                null;
+
         try {
-            URL url = new URL(FIREBASE_URL +"/"+ holderId + ".json");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("Accept", "application/json");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
-            if (conn.getResponseCode() != 200) {
+
+            URL url =
+                    new URL(
+                            FIREBASE_URL
+                                    + "/"
+                                    + holderId.trim()
+                                    + ".json");
+
+            connection =
+                    (HttpURLConnection)
+                            url.openConnection();
+
+            connection.setRequestMethod("GET");
+
+            connection.setRequestProperty(
+                    "Accept",
+                    "application/json");
+
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+
+            int responseCode =
+                    connection.getResponseCode();
+
+            if (responseCode
+                    != HttpURLConnection.HTTP_OK) {
+
+                LOGGER.error(
+                        "Firebase returned HTTP {} "
+                                + "for policy holder {}",
+                        responseCode,
+                        holderId);
+
                 return null;
             }
 
-            StringBuilder responseSb = new StringBuilder();
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+            StringBuilder responseBody =
+                    new StringBuilder();
+
+            try (
+                    BufferedReader reader =
+                            new BufferedReader(
+                                    new InputStreamReader(
+                                            connection
+                                                    .getInputStream(),
+                                            StandardCharsets.UTF_8))
+            ) {
+
                 String line;
-                while ((line = br.readLine()) != null) {
-                    responseSb.append(line);
+
+                while ((line =
+                        reader.readLine()) != null) {
+
+                    responseBody.append(line);
                 }
             }
-            conn.disconnect();
 
-            String jsonResult = responseSb.toString();
-            if (jsonResult == null || "null".equals(jsonResult.trim())) {
-                return null; // Triggers E0001 "Policy holder does not exist" instantly inside engine rules
+            String jsonResult =
+                    responseBody
+                            .toString()
+                            .trim();
+
+            if (jsonResult.isEmpty()
+                    || "null".equals(jsonResult)) {
+
+                return null;
             }
 
-            return gson.fromJson(jsonResult, PolicyState.class);
+            return gson.fromJson(
+                    jsonResult,
+                    PolicyState.class);
+
         } catch (Exception e) {
+
             LOGGER.error(
-                    "Failed to fetch policy holder {} from Firebase",
+                    "Unable to retrieve policy holder {} "
+                            + "from Firebase",
                     holderId,
                     e);
+
             return null;
+
+        } finally {
+
+            if (connection != null) {
+                connection.disconnect();
+            }
         }
     }
 
+    private ClaimOutput createCoverageRuleError(
+            ClaimInput claim) {
+
+        ClaimOutput output =
+                new ClaimOutput();
+
+        output.policyId =
+                claim.policyId;
+
+        output.policyHolderId =
+                claim.policyHolderId;
+
+        output.dateOfService =
+                claim.dateOfService;
+
+        output.mainCategory =
+                claim.mainCategory;
+
+        output.subCategory =
+                claim.subCategory;
+
+        output.billedAmount =
+                claim.billedAmount;
+
+        output.errorCode =
+                "E0005";
+
+        output.errorMessage =
+                "Coverage rule not found for plan, "
+                        + "main category and subcategory";
+
+        output.processingMessage =
+                "No matching PlanCoverage reference data";
+
+        return output;
+    }
+
     private static class ClaimRequestWrapper {
+
         public ClaimInput claim;
+
+        /*
+         * For REST mode this holds the deductible values
+         * explicitly supplied by the caller.
+         */
         public PolicyState policy;
-        public String rule;
     }
 }

@@ -27,10 +27,11 @@ public class BatchProcessingService {
 
     private final Gson gson;
     private final ClaimEngineService claimEngineService;
-
+    private final CoverageRuleService coverageRuleService;
     public BatchProcessingService() {
         this.gson = new Gson();
         this.claimEngineService = new ClaimEngineService();
+        this.coverageRuleService = new CoverageRuleService();
     }
 
     /**
@@ -140,9 +141,23 @@ public class BatchProcessingService {
                                 ? state.currentFamilyAccumulated
                                 : 0.0;
 
-                String activeRule =
-                        determineCoverageRule(claim);
+                String activeRule = state == null ? null : coverageRuleService.findRule(state.planId, claim.mainCategory, claim.subCategory);
+                if (state != null
+                        && (activeRule == null
+                        || activeRule.trim().isEmpty())) {
 
+                    ClaimOutput result =
+                            createCoverageRuleError(claim);
+
+                    writeOutputRow(
+                            writer,
+                            result,
+                            preClaimIndividualAccumulated,
+                            preClaimFamilyAccumulated);
+
+                    processedCount++;
+                    continue;
+                }
                 ClaimOutput result =
                         claimEngineService.processClaim(
                                 claim,
@@ -164,6 +179,42 @@ public class BatchProcessingService {
         return processedCount;
     }
 
+    private ClaimOutput createCoverageRuleError(
+            ClaimInput claim) {
+
+        ClaimOutput output =
+                new ClaimOutput();
+
+        output.policyId =
+                claim.policyId;
+
+        output.policyHolderId =
+                claim.policyHolderId;
+
+        output.dateOfService =
+                claim.dateOfService;
+
+        output.mainCategory =
+                claim.mainCategory;
+
+        output.subCategory =
+                claim.subCategory;
+
+        output.billedAmount =
+                claim.billedAmount;
+
+        output.errorCode =
+                "E0005";
+
+        output.errorMessage =
+                "Coverage rule not found for plan, "
+                        + "main category and subcategory";
+
+        output.processingMessage =
+                "No matching PlanCoverage reference data";
+
+        return output;
+    }
     private void validateHeader(String headerLine) {
 
         String normalizedHeader =
@@ -247,36 +298,6 @@ public class BatchProcessingService {
         return claim;
     }
 
-    private String determineCoverageRule(
-            ClaimInput claim) {
-
-        String subCategory =
-                claim.subCategory == null
-                        ? ""
-                        : claim.subCategory
-                        .trim()
-                        .toUpperCase(Locale.ENGLISH);
-
-        if (subCategory.contains("PHYSICAL EXAM")
-                || subCategory.contains("MAMMOGRAMS")) {
-
-            return "No Charge";
-        }
-
-        if (subCategory.contains("URGENT CARE")) {
-            return "$120 FLAT";
-        }
-
-        if (subCategory.contains("PRIMARY CARE")) {
-            return "50% AFTER DEDUCTIBLE";
-        }
-
-        if (subCategory.contains("LAB TESTS")) {
-            return "90% AFTER DEDUCTIBLE";
-        }
-
-        return "40% AFTER DEDUCTIBLE";
-    }
 
     private PolicyState fetchPolicyFromFirebase(
             String holderId) {
