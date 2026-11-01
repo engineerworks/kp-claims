@@ -1,9 +1,10 @@
 package com.kp.claims.core.services;
 
-import com.google.gson.Gson;
 import com.kp.claims.core.models.ClaimInput;
 import com.kp.claims.core.models.ClaimOutput;
 import com.kp.claims.core.models.PolicyState;
+import com.kp.claims.core.repositories.FirebasePolicyRepository;
+import com.kp.claims.core.repositories.PolicyRepository;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -12,8 +13,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Locale;
@@ -21,34 +20,69 @@ import java.util.Map;
 
 public class BatchProcessingService {
 
-    private static final String FIREBASE_URL =
-            "https://kp-claims-processing-default-rtdb.asia-southeast1"
-                    + ".firebasedatabase.app";
+    private final ClaimEngineService
+            claimEngineService;
 
-    private final Gson gson;
-    private final ClaimEngineService claimEngineService;
-    private final CoverageRuleService coverageRuleService;
+    private final CoverageRuleService
+            coverageRuleService;
+
+    private final PolicyRepository
+            policyRepository;
+
+    /**
+     * Production constructor.
+     *
+     * Used by BatchProcessorCLI and BatchProcessorServlet.
+     */
     public BatchProcessingService() {
-        this.gson = new Gson();
-        this.claimEngineService = new ClaimEngineService();
-        this.coverageRuleService = new CoverageRuleService();
+
+        this(
+                new ClaimEngineService(),
+                new CoverageRuleService(),
+                new FirebasePolicyRepository()
+        );
     }
 
     /**
-     * Processes an input transaction CSV and writes a processed CSV.
+     * Constructor injection for unit testing.
      *
-     * The same method is used by:
-     * 1. BatchProcessorCLI
-     * 2. BatchProcessorServlet
-     *
-     * @param inputStream  input transaction CSV
-     * @param outputStream processed output CSV
-     * @return number of transactions processed
-     * @throws IOException when the input or output stream cannot be processed
+     * JUnit can provide a fake PolicyRepository so tests do not
+     * make real Firebase network calls.
      */
+    public BatchProcessingService(
+            ClaimEngineService claimEngineService,
+            CoverageRuleService coverageRuleService,
+            PolicyRepository policyRepository) {
+
+        if (claimEngineService == null) {
+            throw new IllegalArgumentException(
+                    "ClaimEngineService is required");
+        }
+
+        if (coverageRuleService == null) {
+            throw new IllegalArgumentException(
+                    "CoverageRuleService is required");
+        }
+
+        if (policyRepository == null) {
+            throw new IllegalArgumentException(
+                    "PolicyRepository is required");
+        }
+
+        this.claimEngineService =
+                claimEngineService;
+
+        this.coverageRuleService =
+                coverageRuleService;
+
+        this.policyRepository =
+                policyRepository;
+    }
+
     public int process(
             InputStream inputStream,
-            OutputStream outputStream) throws IOException {
+            OutputStream outputStream)
+            throws IOException {
 
         if (inputStream == null) {
             throw new IllegalArgumentException(
@@ -60,6 +94,13 @@ public class BatchProcessingService {
                     "Output CSV stream is required");
         }
 
+        /*
+         * Holds the latest in-memory policy state for each
+         * policyholder during one batch execution.
+         *
+         * This ensures that the next claim for the same member
+         * uses the deductible state updated by the previous claim.
+         */
         Map<String, PolicyState> policyStateCache =
                 new HashMap<>();
 
@@ -78,7 +119,8 @@ public class BatchProcessingService {
                                         outputStream,
                                         StandardCharsets.UTF_8))
         ) {
-            String headerLine = reader.readLine();
+            String headerLine =
+                    reader.readLine();
 
             if (headerLine == null
                     || headerLine.trim().isEmpty()) {
@@ -88,14 +130,14 @@ public class BatchProcessingService {
             }
 
             validateHeader(headerLine);
-
             writeOutputHeader(writer);
 
             String line;
-            int sourceRowNumber = 1;
+            int rowNumber = 1;
 
             while ((line = reader.readLine()) != null) {
-                sourceRowNumber++;
+
+                rowNumber++;
 
                 if (line.trim().isEmpty()) {
                     continue;
@@ -105,11 +147,13 @@ public class BatchProcessingService {
 
                 try {
                     claim = parseClaim(line);
+
                 } catch (Exception e) {
+
                     writeMalformedInputRow(
                             writer,
                             line,
-                            sourceRowNumber,
+                            rowNumber,
                             e.getMessage());
 
                     processedCount++;
@@ -120,11 +164,19 @@ public class BatchProcessingService {
                         policyStateCache.get(
                                 claim.policyHolderId);
 
+                /*
+                 * Call the repository only the first time this
+                 * policyholder appears in the current batch.
+                 */
                 if (state == null) {
-                    state = fetchPolicyFromFirebase(
-                            claim.policyHolderId);
+
+                    state =
+                            policyRepository
+                                    .findByPolicyHolderId(
+                                            claim.policyHolderId);
 
                     if (state != null) {
+
                         policyStateCache.put(
                                 claim.policyHolderId,
                                 state);
@@ -132,22 +184,34 @@ public class BatchProcessingService {
                 }
 
                 double preClaimIndividualAccumulated =
-                        state != null
-                                ? state.currentIndividualAccumulated
-                                : 0.0;
+                        state == null
+                                ? 0.0
+                                : state.currentIndividualAccumulated;
 
                 double preClaimFamilyAccumulated =
-                        state != null
-                                ? state.currentFamilyAccumulated
-                                : 0.0;
+                        state == null
+                                ? 0.0
+                                : state.currentFamilyAccumulated;
 
-                String activeRule = state == null ? null : coverageRuleService.findRule(state.planId, claim.mainCategory, claim.subCategory);
+                /*
+                 * When the policy does not exist, ClaimEngineService
+                 * returns E0001 before using the coverage rule.
+                 */
+                String coverageRule =
+                        state == null
+                                ? ""
+                                : coverageRuleService.findRule(
+                                state.planId,
+                                claim.mainCategory,
+                                claim.subCategory);
+
                 if (state != null
-                        && (activeRule == null
-                        || activeRule.trim().isEmpty())) {
+                        && (coverageRule == null
+                        || coverageRule.trim().isEmpty())) {
 
                     ClaimOutput result =
-                            createCoverageRuleError(claim);
+                            createCoverageRuleError(
+                                    claim);
 
                     writeOutputRow(
                             writer,
@@ -158,11 +222,12 @@ public class BatchProcessingService {
                     processedCount++;
                     continue;
                 }
+
                 ClaimOutput result =
                         claimEngineService.processClaim(
                                 claim,
                                 state,
-                                activeRule);
+                                coverageRule);
 
                 writeOutputRow(
                         writer,
@@ -177,6 +242,95 @@ public class BatchProcessingService {
         }
 
         return processedCount;
+    }
+
+    private void validateHeader(
+            String headerLine) {
+
+        String normalizedHeader =
+                headerLine
+                        .replace("\uFEFF", "")
+                        .trim()
+                        .toLowerCase(Locale.ENGLISH);
+
+        if (!normalizedHeader.contains("policyid")
+                || !normalizedHeader.contains(
+                "policy holder id")
+                || !normalizedHeader.contains(
+                "date of service")
+                || !normalizedHeader.contains(
+                "coverage main category")
+                || !normalizedHeader.contains(
+                "coverage sub category")
+                || !normalizedHeader.contains(
+                "billed amount")) {
+
+            throw new IllegalArgumentException(
+                    "Invalid CSV header. Expected "
+                            + "PolicyId, Policy holder Id, "
+                            + "Date of service, "
+                            + "Coverage Main Category, "
+                            + "Coverage Sub Category and "
+                            + "Billed Amount");
+        }
+    }
+
+    private ClaimInput parseClaim(
+            String line) {
+
+        String[] tokens =
+                line.split(",", -1);
+
+        if (tokens.length < 6) {
+            throw new IllegalArgumentException(
+                    "Expected six CSV columns");
+        }
+
+        ClaimInput claim =
+                new ClaimInput();
+
+        claim.policyId =
+                cleanValue(tokens[0]);
+
+        claim.policyHolderId =
+                cleanValue(tokens[1]);
+
+        claim.dateOfService =
+                cleanValue(tokens[2]);
+
+        claim.mainCategory =
+                cleanValue(tokens[3]);
+
+        claim.subCategory =
+                cleanValue(tokens[4]);
+
+        String billedAmountText =
+                cleanValue(tokens[5]);
+
+        if (claim.policyId.isEmpty()
+                || claim.policyHolderId.isEmpty()
+                || claim.dateOfService.isEmpty()
+                || claim.mainCategory.isEmpty()
+                || claim.subCategory.isEmpty()
+                || billedAmountText.isEmpty()) {
+
+            throw new IllegalArgumentException(
+                    "One or more required fields are missing");
+        }
+
+        try {
+            claim.billedAmount =
+                    Double.parseDouble(
+                            billedAmountText);
+
+        } catch (NumberFormatException e) {
+
+            throw new IllegalArgumentException(
+                    "Invalid billed amount: "
+                            + billedAmountText);
+        }
+
+        return claim;
     }
 
     private ClaimOutput createCoverageRuleError(
@@ -215,188 +369,10 @@ public class BatchProcessingService {
 
         return output;
     }
-    private void validateHeader(String headerLine) {
-
-        String normalizedHeader =
-                headerLine
-                        .replace("\uFEFF", "")
-                        .trim()
-                        .toLowerCase(Locale.ENGLISH);
-
-        if (!normalizedHeader.contains("policyid")
-                || !normalizedHeader.contains(
-                "policy holder id")
-                || !normalizedHeader.contains(
-                "date of service")
-                || !normalizedHeader.contains(
-                "billed amount")) {
-
-            throw new IllegalArgumentException(
-                    "Invalid CSV header. Expected PolicyId, "
-                            + "Policy holder Id, Date of service, "
-                            + "Coverage Main Category, "
-                            + "Coverage Sub Category and Billed Amount");
-        }
-    }
-
-    private ClaimInput parseClaim(String line) {
-
-        /*
-         * This parser supports the sample assignment CSV.
-         * The assignment data does not contain commas inside column values.
-         *
-         * Later, this can be replaced by Apache Commons CSV for full
-         * quoted-field support.
-         */
-        String[] tokens = line.split(",", -1);
-
-        if (tokens.length < 6) {
-            throw new IllegalArgumentException(
-                    "Expected six CSV columns");
-        }
-
-        ClaimInput claim = new ClaimInput();
-
-        claim.policyId =
-                cleanValue(tokens[0]);
-
-        claim.policyHolderId =
-                cleanValue(tokens[1]);
-
-        claim.dateOfService =
-                cleanValue(tokens[2]);
-
-        claim.mainCategory =
-                cleanValue(tokens[3]);
-
-        claim.subCategory =
-                cleanValue(tokens[4]);
-
-        String billedAmountText =
-                cleanValue(tokens[5]);
-
-        if (claim.policyId.isEmpty()
-                || claim.policyHolderId.isEmpty()
-                || claim.dateOfService.isEmpty()
-                || claim.mainCategory.isEmpty()
-                || claim.subCategory.isEmpty()
-                || billedAmountText.isEmpty()) {
-
-            throw new IllegalArgumentException(
-                    "One or more required fields are missing");
-        }
-
-        try {
-            claim.billedAmount =
-                    Double.parseDouble(billedAmountText);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(
-                    "Invalid billed amount: "
-                            + billedAmountText);
-        }
-
-        return claim;
-    }
-
-
-    private PolicyState fetchPolicyFromFirebase(
-            String holderId) {
-
-        if (holderId == null
-                || holderId.trim().isEmpty()) {
-
-            return null;
-        }
-
-        HttpURLConnection connection = null;
-
-        try {
-            URL url = new URL(
-                    FIREBASE_URL
-                            + "/"
-                            + holderId.trim()
-                            + ".json");
-
-            connection =
-                    (HttpURLConnection)
-                            url.openConnection();
-
-            connection.setRequestMethod("GET");
-            connection.setRequestProperty(
-                    "Accept",
-                    "application/json");
-
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(5000);
-
-            int responseCode =
-                    connection.getResponseCode();
-
-            if (responseCode
-                    != HttpURLConnection.HTTP_OK) {
-
-                System.err.println(
-                        "Firebase returned HTTP "
-                                + responseCode
-                                + " for policy holder "
-                                + holderId);
-
-                return null;
-            }
-
-            StringBuilder responseBody =
-                    new StringBuilder();
-
-            try (
-                    BufferedReader firebaseReader =
-                            new BufferedReader(
-                                    new InputStreamReader(
-                                            connection
-                                                    .getInputStream(),
-                                            StandardCharsets.UTF_8))
-            ) {
-                String responseLine;
-
-                while ((responseLine =
-                        firebaseReader.readLine()) != null) {
-
-                    responseBody.append(responseLine);
-                }
-            }
-
-            String jsonResult =
-                    responseBody.toString().trim();
-
-            if (jsonResult.isEmpty()
-                    || "null".equals(jsonResult)) {
-
-                return null;
-            }
-
-            return gson.fromJson(
-                    jsonResult,
-                    PolicyState.class);
-
-        } catch (Exception e) {
-
-            System.err.println(
-                    "Failed to fetch policy holder "
-                            + holderId
-                            + " from Firebase: "
-                            + e.getMessage());
-
-            return null;
-
-        } finally {
-
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
-    }
 
     private void writeOutputHeader(
-            BufferedWriter writer) throws IOException {
+            BufferedWriter writer)
+            throws IOException {
 
         writer.write(
                 "PolicyId,"
@@ -497,39 +473,52 @@ public class BatchProcessingService {
         writer.newLine();
     }
 
-    private String cleanValue(String value) {
+    private String cleanValue(
+            String value) {
 
         if (value == null) {
             return "";
         }
 
-        String cleaned = value.trim();
+        String cleaned =
+                value.trim();
 
         if (cleaned.length() >= 2
                 && cleaned.startsWith("\"")
                 && cleaned.endsWith("\"")) {
 
-            cleaned = cleaned.substring(
-                    1,
-                    cleaned.length() - 1);
+            cleaned =
+                    cleaned.substring(
+                            1,
+                            cleaned.length() - 1);
         }
 
         return cleaned.trim();
     }
 
-    private String formatAmount(double value) {
+    private String formatAmount(
+            double value) {
 
-        return String.format(Locale.US, "%.2f", value);
+        return String.format(
+                Locale.US,
+                "%.2f",
+                value);
     }
 
-    private String csv(String value) {
+    private String csv(
+            String value) {
 
         if (value == null) {
             return "";
         }
 
-        String escaped = value.replace("\"", "\"\"");
+        String escaped =
+                value.replace(
+                        "\"",
+                        "\"\"");
 
-        return "\"" + escaped + "\"";
+        return "\""
+                + escaped
+                + "\"";
     }
 }

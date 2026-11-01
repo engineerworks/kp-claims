@@ -1,97 +1,320 @@
 <!--/*
-    Copyright 2015 Adobe Systems Incorporated
-  
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-  
-        http://www.apache.org/licenses/LICENSE-2.0
-  
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+    Claims Transaction Processing Dashboard
 */-->
-<!-- Load the specific claims wizard styles and JS scripts -->
-<!-- Load the visual styling and interaction scripts from our ClientLibrary -->
+
 <sly data-sly-use.clientlib="/libs/granite/sightly/templates/clientlib.html"
      data-sly-call="${clientlib.all @ categories='kp.claims.wizard'}"/>
 
 <div class="kp-claims-wizard-container">
     <div class="claims-wizard-card">
-        <h2>KP Claims Processing Dashboard</h2>
-        <p class="subtitle">Claims Transaction Processing</p>
-        <div class="tabs">
-            <button class="tab-btn active" id="tab-single" type="button">Single Claim Evaluation</button>
-            <button class="tab-btn" id="tab-batch" type="button">Batch Claim Processing
-            </button>
-           </div>
 
-        <!-- Single Claim Evaluation Form Panel -->
-        <div id="panel-single" class="tab-panel">
+        <h2>Claims Transaction Processing Dashboard</h2>
+        <p class="subtitle">
+            Real-Time and Batch Claim Adjudication
+        </p>
+
+        <div class="tabs" role="tablist">
+            <button
+                    class="tab-btn active"
+                    id="tab-single"
+                    type="button"
+                    role="tab">
+                Single Claim Processing
+            </button>
+
+            <button
+                    class="tab-btn"
+                    id="tab-batch"
+                    type="button"
+                    role="tab">
+                Batch Claim Processing
+            </button>
+        </div>
+
+        <!-- SINGLE CLAIM / REST API -->
+        <div
+                id="panel-single"
+                class="tab-panel"
+                role="tabpanel">
+
+            <div class="section-introduction">
+                <h3>Process a Single Claim</h3>
+                <p>
+                    Submit a claim for real-time adjudication.
+                    The coverage rule is resolved automatically
+                    from the policyholder's plan.
+                </p>
+            </div>
+
             <form id="realtime-claim-form">
+
                 <div class="form-grid">
+
                     <div>
-                        <label for="policyId">Policy ID</label>
-                        <input type="text" id="policyId" value="100001" required>
+                        <label for="policyId">
+                            Policy ID
+                        </label>
+                        <input
+                                type="text"
+                                id="policyId"
+                                value="100009"
+                                required>
                     </div>
+
                     <div>
-                        <label for="policyHolderId">Policy Holder ID</label>
-                        <input type="text" id="policyHolderId" value="1000011" required>
+                        <label for="policyHolderId">
+                            Policy Holder ID
+                        </label>
+                        <input
+                                type="text"
+                                id="policyHolderId"
+                                value="1000099"
+                                required>
                     </div>
+
                     <div>
-                        <label for="billedAmount">Billed Amount ($)</label>
-                        <input type="number" id="billedAmount" value="4000" step="0.01" required>
+                        <label for="dateOfService">
+                            Date of Service
+                        </label>
+                        <input
+                                type="date"
+                                id="dateOfService"
+                                value="2016-07-20"
+                                required>
                     </div>
-                    <!-- Dynamic Coverage Rules Selection Dropdown -->
+
                     <div>
-                        <label for="ruleString">Coverage Category Rule</label>
-                        <select id="ruleString" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; background: #fff; height: 35px;">
-                            <option value="40% AFTER DEDUCTIBLE" selected>Inpatient Surgery (40% After Deductible)</option>
-                            <option value="50% AFTER DEDUCTIBLE">Primary Care Visit (50% After Deductible)</option>
-                            <option value="90% AFTER DEDUCTIBLE">Outpatient Lab Tests (90% After Deductible)</option>
-                            <option value="No Charge">Routine Physical Exam (No Charge)</option>
-                            <option value="$120 FLAT">Urgent Care Visit ($120 Flat Coverage)</option>
+                        <label for="billedAmount">
+                            Billed Amount ($)
+                        </label>
+                        <input
+                                type="number"
+                                id="billedAmount"
+                                value="1500"
+                                min="0.01"
+                                step="0.01"
+                                required>
+                    </div>
+
+                    <div>
+                        <label for="mainCategory">
+                            Coverage Main Category
+                        </label>
+
+                        <select
+                                id="mainCategory"
+                                required>
+
+                            <option value="">
+                                Select Category
+                            </option>
+
+                            <option value="Preventive Care">
+                                Preventive Care
+                            </option>
+
+                            <option
+                                    value="Outpatient Services"
+                                    selected>
+                                Outpatient Services
+                            </option>
+
+                            <option value="Inpatient Hospital Care">
+                                Inpatient Hospital Care
+                            </option>
+
+                            <option value="Maternity">
+                                Maternity
+                            </option>
+
+                            <option value="Emergency And Urgent Care">
+                                Emergency And Urgent Care
+                            </option>
+
+                            <option value="Prescription Drugs">
+                                Prescription Drugs
+                            </option>
+
                         </select>
                     </div>
+
                     <div>
-                        <label for="currentInd">Current Ind. Accumulated ($)</label>
-                        <input type="number" id="currentInd" value="2000" step="0.01" required>
+                        <label for="subCategory">
+                            Coverage Sub Category
+                        </label>
+
+                        <select
+                                id="subCategory"
+                                required>
+
+                            <option value="">
+                                Select Service
+                            </option>
+
+                            <option value="LAB TESTS" selected>
+                                LAB TESTS
+                            </option>
+
+                            <option value="PRIMARY CARE OFFICE VISIT">
+                                PRIMARY CARE OFFICE VISIT
+                            </option>
+
+                            <option value="SPECIALTY CARE OFFICE VISIT">
+                                SPECIALTY CARE OFFICE VISIT
+                            </option>
+
+                            <option value="X-RAYS">
+                                X-RAYS
+                            </option>
+
+                            <option value="ROOM AND BOARD">
+                                ROOM AND BOARD
+                            </option>
+
+                            <option value="SURGERY">
+                                SURGERY
+                            </option>
+
+                            <option value="ROUTINE PHYSICAL EXAM">
+                                ROUTINE PHYSICAL EXAM
+                            </option>
+
+                            <option value="MAMMOGRAMS">
+                                MAMMOGRAMS
+                            </option>
+
+                            <option value="URGENT CARE VISIT">
+                                URGENT CARE VISIT
+                            </option>
+
+                            <option value="EMERGENCY DEPARTMENT VISIT">
+                                EMERGENCY DEPARTMENT VISIT
+                            </option>
+
+                            <option value="GENERIC">
+                                GENERIC
+                            </option>
+
+                            <option value="PREFERRED BRAND">
+                                PREFERRED BRAND
+                            </option>
+
+                            <option value="NON-PREFERRED BRAND">
+                                NON-PREFERRED BRAND
+                            </option>
+
+                            <option value="SPECIALTY">
+                                SPECIALTY
+                            </option>
+
+                        </select>
                     </div>
+
                     <div>
-                        <label for="currentFam">Current Fam. Accumulated ($)</label>
-                        <input type="number" id="currentFam" value="2000" step="0.01" required>
+                        <label for="currentInd">
+                            Individual Accumulated Deductible ($)
+                        </label>
+
+                        <input
+                                type="number"
+                                id="currentInd"
+                                value="1000"
+                                min="0"
+                                step="0.01"
+                                required>
                     </div>
+
+                    <div>
+                        <label for="currentFam">
+                            Family Accumulated Deductible ($)
+                        </label>
+
+                        <input
+                                type="number"
+                                id="currentFam"
+                                value="12000"
+                                min="0"
+                                step="0.01"
+                                required>
+                    </div>
+
                 </div>
-                <button type="submit" class="submit-btn">Execute Stateless Engine</button>
+
+                <button
+                        type="submit"
+                        class="submit-btn">
+                    Process Claim
+                </button>
+
             </form>
-            <div id="api-result-output" class="result-box hidden"></div>
+
+            <div
+                    id="api-result-output"
+                    class="result-box hidden"
+                    aria-live="polite">
+            </div>
+
         </div>
 
-        <!-- Batch Streaming Pipeline Panel -->
-        <!-- Batch Claim Processing Panel -->
-        <div id="panel-batch" class="tab-panel hidden">
+        <!-- BATCH PROCESSING -->
+        <div
+                id="panel-batch"
+                class="tab-panel hidden"
+                role="tabpanel">
 
             <div class="batch-introduction">
-                <h3>Process a Transaction CSV</h3>
-                <p>Select an input transaction CSV. Claims will be processed in their original order and the processed CSV will download automatically.</p>
+
+                <h3>Process Transaction CSV</h3>
+
+                <p>
+                    Upload a transaction CSV containing multiple claims.
+                    Claims are processed in their original order and
+                    the processed CSV is generated for download.
+                </p>
+
             </div>
 
-            <div class="dropzone" id="csv-dropzone" role="button" tabindex="0" aria-label="Choose a transaction CSV">
+            <div
+                    class="dropzone"
+                    id="csv-dropzone"
+                    role="button"
+                    tabindex="0"
+                    aria-label="Choose a transaction CSV">
 
-                <p>Drag and drop a CSV here or click to choose a file</p>
+                <p>
+                    Drag and drop a CSV here
+                    or click to choose a file
+                </p>
 
-                <p id="selected-file-name" class="selected-file-name">No file selected</p>
+                <p
+                        id="selected-file-name"
+                        class="selected-file-name">
+                    No file selected
+                </p>
 
-                <input type="file" id="batch-file-input" accept=".csv,text/csv" style="display:none">
+                <input
+                        type="file"
+                        id="batch-file-input"
+                        accept=".csv,text/csv"
+                        style="display:none">
+
             </div>
 
-            <button id="process-batch-button" type="button" class="submit-btn" disabled>Process and Download CSV
+            <button
+                    id="process-batch-button"
+                    type="button"
+                    class="submit-btn"
+                    disabled>
+                Process and Download CSV
             </button>
 
-            <div id="batch-status" class="batch-status-box hidden" aria-live="polite"></div>
+            <div
+                    id="batch-status"
+                    class="batch-status-box hidden"
+                    aria-live="polite">
+            </div>
 
         </div>
+
     </div>
 </div>

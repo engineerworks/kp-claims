@@ -8,7 +8,7 @@
             .then(function (response) {
                 if (!response.ok) {
                     throw new Error(
-                        "Unable to retrieve the AEM CSRF token."
+                        "Unable to retrieve AEM CSRF token."
                     );
                 }
 
@@ -25,20 +25,14 @@
             });
     }
 
-    function setActivePanel(
-        selectedTab,
-        selectedPanel,
-        otherTab,
-        otherPanel
-    ) {
-        selectedTab.classList.add("active");
-        selectedPanel.classList.remove("hidden");
-
-        otherTab.classList.remove("active");
-        otherPanel.classList.add("hidden");
-    }
+    /*
+     * ---------------------------------------------------------
+     * TABS
+     * ---------------------------------------------------------
+     */
 
     function setupTabs() {
+
         var tabSingle =
             document.getElementById("tab-single");
 
@@ -62,115 +56,173 @@
         tabSingle.addEventListener(
             "click",
             function () {
-                setActivePanel(
-                    tabSingle,
-                    panelSingle,
-                    tabBatch,
-                    panelBatch
-                );
+
+                tabSingle.classList.add("active");
+                tabBatch.classList.remove("active");
+
+                panelSingle.classList.remove("hidden");
+                panelBatch.classList.add("hidden");
             }
         );
 
         tabBatch.addEventListener(
             "click",
             function () {
-                setActivePanel(
-                    tabBatch,
-                    panelBatch,
-                    tabSingle,
-                    panelSingle
-                );
+
+                tabBatch.classList.add("active");
+                tabSingle.classList.remove("active");
+
+                panelBatch.classList.remove("hidden");
+                panelSingle.classList.add("hidden");
             }
         );
     }
 
+    /*
+     * ---------------------------------------------------------
+     * SINGLE CLAIM / REST API
+     * ---------------------------------------------------------
+     */
+
     function setupSingleClaimForm() {
+
         var claimForm =
             document.getElementById(
                 "realtime-claim-form"
             );
 
-        if (!claimForm) {
+        var resultBox =
+            document.getElementById(
+                "api-result-output"
+            );
+
+        if (!claimForm || !resultBox) {
             return;
         }
 
         claimForm.addEventListener(
             "submit",
             function (event) {
+
                 event.preventDefault();
 
-                var resultBox =
+                var policyId =
                     document.getElementById(
-                        "api-result-output"
+                        "policyId"
+                    ).value.trim();
+
+                var policyHolderId =
+                    document.getElementById(
+                        "policyHolderId"
+                    ).value.trim();
+
+                var dateOfService =
+                    document.getElementById(
+                        "dateOfService"
+                    ).value;
+
+                var billedAmount =
+                    parseFloat(
+                        document.getElementById(
+                            "billedAmount"
+                        ).value
                     );
 
-                resultBox.classList.remove("hidden");
-                resultBox.textContent =
-                    "Evaluating transaction...";
+                var mainCategory =
+                    document.getElementById(
+                        "mainCategory"
+                    ).value;
 
+                var subCategory =
+                    document.getElementById(
+                        "subCategory"
+                    ).value;
+
+                var individualAccumulated =
+                    parseFloat(
+                        document.getElementById(
+                            "currentInd"
+                        ).value
+                    );
+
+                var familyAccumulated =
+                    parseFloat(
+                        document.getElementById(
+                            "currentFam"
+                        ).value
+                    );
+
+                if (!policyId
+                    || !policyHolderId
+                    || !dateOfService
+                    || !mainCategory
+                    || !subCategory
+                    || !Number.isFinite(billedAmount)
+                    || billedAmount <= 0
+                    || !Number.isFinite(
+                        individualAccumulated
+                    )
+                    || individualAccumulated < 0
+                    || !Number.isFinite(
+                        familyAccumulated
+                    )
+                    || familyAccumulated < 0) {
+
+                    showClaimError(
+                        resultBox,
+                        "Please provide valid values "
+                        + "for all claim fields."
+                    );
+
+                    return;
+                }
+
+                /*
+                 * The REST caller supplies the two accumulated
+                 * deductible values as required by the assignment.
+                 *
+                 * Plan assignment, thresholds, active status and
+                 * coverage rule are resolved on the server.
+                 */
                 var payload = {
+
                     claim: {
-                        policyId:
-                            document.getElementById(
-                                "policyId"
-                            ).value.trim(),
+                        policyId: policyId,
 
                         policyHolderId:
-                            document.getElementById(
-                                "policyHolderId"
-                            ).value.trim(),
+                        policyHolderId,
 
                         billedAmount:
-                            parseFloat(
-                                document.getElementById(
-                                    "billedAmount"
-                                ).value
-                            ),
+                        billedAmount,
 
                         mainCategory:
-                            "Inpatient Hospital Care",
+                        mainCategory,
 
                         subCategory:
-                            "SURGERY",
+                        subCategory,
 
                         dateOfService:
-                            "2016-05-08"
+                        dateOfService
                     },
 
                     policy: {
-                        planId: "P001",
-
-                        individualThreshold:
-                            6000.0,
-
-                        familyThreshold:
-                            12000.0,
 
                         currentIndividualAccumulated:
-                            parseFloat(
-                                document.getElementById(
-                                    "currentInd"
-                                ).value
-                            ),
+                        individualAccumulated,
 
                         currentFamilyAccumulated:
-                            parseFloat(
-                                document.getElementById(
-                                    "currentFam"
-                                ).value
-                            ),
-
-                        isActive: true
-                    },
-
-                    rule:
-                    document.getElementById(
-                        "ruleString"
-                    ).value
+                        familyAccumulated
+                    }
                 };
+
+                resultBox.classList.remove("hidden");
+
+                resultBox.textContent =
+                    "Processing claim...";
 
                 fetchCSRFToken()
                     .then(function (token) {
+
                         return fetch(
                             "/bin/kp/claims/process",
                             {
@@ -194,10 +246,14 @@
                             }
                         );
                     })
+
                     .then(function (response) {
+
                         return response.json()
                             .then(function (data) {
+
                                 if (!response.ok) {
+
                                     throw new Error(
                                         data.error
                                         || "Claim processing failed."
@@ -207,46 +263,119 @@
                                 return data;
                             });
                     })
+
                     .then(function (data) {
+
                         if (data.errorCode) {
-                            resultBox.textContent =
+
+                            showClaimError(
+                                resultBox,
                                 data.errorCode
                                 + ": "
-                                + data.errorMessage;
+                                + (
+                                    data.errorMessage
+                                    || "Claim processing failed."
+                                )
+                            );
 
                             return;
                         }
 
-                        resultBox.innerHTML =
-                            "<strong>"
-                            + "Adjudication Complete"
-                            + "</strong><br>"
-                            + "Plan Pays: $"
-                            + Number(
-                                data.planPays
-                            ).toFixed(2)
-                            + "<br>"
-                            + "Policyholder Pays: $"
-                            + Number(
-                                data.policyHolderPays
-                            ).toFixed(2)
-                            + "<br>"
-                            + "<small>"
-                            + escapeHtml(
-                                data.processingMessage
-                                || ""
-                            )
-                            + "</small>";
+                        displayClaimResult(
+                            resultBox,
+                            data
+                        );
                     })
+
                     .catch(function (error) {
-                        resultBox.textContent =
-                            error.message;
+
+                        showClaimError(
+                            resultBox,
+                            error.message
+                        );
                     });
             }
         );
     }
 
+    function displayClaimResult(
+        resultBox,
+        data
+    ) {
+
+        resultBox.classList.remove("hidden");
+
+        resultBox.innerHTML =
+            "<strong>Adjudication Complete</strong>"
+            + "<br><br>"
+
+            + "<strong>Coverage Rule:</strong> "
+            + escapeHtml(
+                data.ruleUsed || ""
+            )
+            + "<br>"
+
+            + "<strong>Billed Amount:</strong> $"
+            + formatAmount(
+                data.billedAmount
+            )
+            + "<br>"
+
+            + "<strong>Plan Pays:</strong> $"
+            + formatAmount(
+                data.planPays
+            )
+            + "<br>"
+
+            + "<strong>Policyholder Pays:</strong> $"
+            + formatAmount(
+                data.policyHolderPays
+            )
+            + "<br><br>"
+
+            + "<strong>"
+            + "Individual Accumulated:"
+            + "</strong> $"
+            + formatAmount(
+                data.updatedIndividualAccumulated
+            )
+            + "<br>"
+
+            + "<strong>"
+            + "Family Accumulated:"
+            + "</strong> $"
+            + formatAmount(
+                data.updatedFamilyAccumulated
+            )
+            + "<br><br>"
+
+            + "<strong>Processing Result:</strong> "
+            + escapeHtml(
+                data.processingMessage || ""
+            );
+    }
+
+    function showClaimError(
+        resultBox,
+        message
+    ) {
+
+        resultBox.classList.remove("hidden");
+
+        resultBox.innerHTML =
+            "<strong>Claim could not be processed</strong>"
+            + "<br>"
+            + escapeHtml(message);
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * BATCH PROCESSING
+     * ---------------------------------------------------------
+     */
+
     function setupBatchProcessing() {
+
         var dropzone =
             document.getElementById(
                 "csv-dropzone"
@@ -274,6 +403,7 @@
 
         if (!dropzone
             || !fileInput
+            || !selectedFileName
             || !processButton
             || !statusBox) {
 
@@ -281,49 +411,72 @@
         }
 
         function selectFile(file) {
+
             if (!file) {
                 return;
             }
 
-            if (!file.name.toLowerCase()
+            if (!file.name
+                .toLowerCase()
                 .endsWith(".csv")) {
 
                 fileInput.value = "";
-                processButton.disabled = true;
+
+                processButton.disabled =
+                    true;
 
                 selectedFileName.textContent =
-                    "Only CSV files are supported.";
+                    "No file selected";
 
                 showBatchStatus(
                     statusBox,
                     "error",
-                    "Please select a valid .csv file."
+                    "Only CSV files are supported."
                 );
 
                 return;
             }
 
             if (file.size <= 0) {
+
                 fileInput.value = "";
-                processButton.disabled = true;
+
+                processButton.disabled =
+                    true;
+
+                selectedFileName.textContent =
+                    "No file selected";
 
                 showBatchStatus(
                     statusBox,
                     "error",
-                    "The selected CSV file is empty."
+                    "The selected CSV is empty."
                 );
 
                 return;
             }
 
+            /*
+             * Demo safety limit.
+             *
+             * Large production files should be submitted to an
+             * asynchronous job instead of keeping the HTTP request
+             * open while processing.
+             */
             if (file.size > 10 * 1024 * 1024) {
+
                 fileInput.value = "";
-                processButton.disabled = true;
+
+                processButton.disabled =
+                    true;
+
+                selectedFileName.textContent =
+                    "No file selected";
 
                 showBatchStatus(
                     statusBox,
                     "error",
-                    "The selected file exceeds "
+                    "The selected CSV exceeds "
                     + "the 10 MB demo limit."
                 );
 
@@ -333,22 +486,25 @@
             selectedFileName.textContent =
                 file.name
                 + " ("
-                + formatFileSize(file.size)
+                + formatFileSize(
+                    file.size
+                )
                 + ")";
 
-            processButton.disabled = false;
+            processButton.disabled =
+                false;
 
             showBatchStatus(
                 statusBox,
                 "ready",
-                "File selected. "
-                + "Click Process and Download CSV."
+                "File ready for processing."
             );
         }
 
         dropzone.addEventListener(
             "click",
             function () {
+
                 fileInput.click();
             }
         );
@@ -356,10 +512,12 @@
         dropzone.addEventListener(
             "keydown",
             function (event) {
+
                 if (event.key === "Enter"
                     || event.key === " ") {
 
                     event.preventDefault();
+
                     fileInput.click();
                 }
             }
@@ -368,6 +526,7 @@
         fileInput.addEventListener(
             "change",
             function () {
+
                 selectFile(
                     fileInput.files[0]
                 );
@@ -377,7 +536,9 @@
         dropzone.addEventListener(
             "dragover",
             function (event) {
+
                 event.preventDefault();
+
                 dropzone.classList.add(
                     "drag-active"
                 );
@@ -387,6 +548,7 @@
         dropzone.addEventListener(
             "dragleave",
             function () {
+
                 dropzone.classList.remove(
                     "drag-active"
                 );
@@ -396,6 +558,7 @@
         dropzone.addEventListener(
             "drop",
             function (event) {
+
                 event.preventDefault();
 
                 dropzone.classList.remove(
@@ -405,26 +568,37 @@
                 var files =
                     event.dataTransfer.files;
 
-                if (!files || !files.length) {
+                if (!files
+                    || !files.length) {
+
                     return;
                 }
 
                 /*
-                 * Assigning DataTransfer files to an input is supported
-                 * by modern browsers used for the local demo.
+                 * Do not depend on assigning to
+                 * fileInput.files.
+                 *
+                 * Store the dropped file separately.
                  */
-                fileInput.files = files;
-                selectFile(files[0]);
+                fileInput._droppedFile =
+                    files[0];
+
+                selectFile(
+                    files[0]
+                );
             }
         );
 
         processButton.addEventListener(
             "click",
             function () {
-                var file =
-                    fileInput.files[0];
 
-                if (!file) {
+                var selectedFile =
+                    fileInput._droppedFile
+                    || fileInput.files[0];
+
+                if (!selectedFile) {
+
                     showBatchStatus(
                         statusBox,
                         "error",
@@ -434,15 +608,17 @@
                     return;
                 }
 
-                processButton.disabled = true;
+                processButton.disabled =
+                    true;
+
                 processButton.textContent =
                     "Processing...";
 
                 showBatchStatus(
                     statusBox,
                     "processing",
-                    "Uploading and processing "
-                    + file.name
+                    "Processing "
+                    + selectedFile.name
                     + "..."
                 );
 
@@ -451,12 +627,14 @@
 
                 formData.append(
                     "file",
-                    file,
-                    file.name
+                    selectedFile,
+                    selectedFile.name
                 );
 
                 fetchCSRFToken()
+
                     .then(function (token) {
+
                         return fetch(
                             "/bin/kp/claims/batch-process",
                             {
@@ -470,23 +648,37 @@
                                     token
                                 },
 
-                                body: formData
+                                /*
+                                 * Do not manually set
+                                 * Content-Type here.
+                                 *
+                                 * The browser adds the
+                                 * multipart boundary.
+                                 */
+                                body:
+                                formData
                             }
                         );
                     })
+
                     .then(function (response) {
+
                         var contentType =
                             response.headers.get(
                                 "Content-Type"
                             ) || "";
 
                         if (!response.ok) {
-                            if (contentType.indexOf(
-                                "application/json"
-                            ) !== -1) {
+
+                            if (
+                                contentType.indexOf(
+                                    "application/json"
+                                ) !== -1
+                            ) {
 
                                 return response.json()
                                     .then(function (data) {
+
                                         throw new Error(
                                             data.error
                                             || "Batch processing failed."
@@ -496,6 +688,7 @@
 
                             return response.text()
                                 .then(function (text) {
+
                                     throw new Error(
                                         text
                                         || "Batch processing failed."
@@ -505,13 +698,15 @@
 
                         return response.blob();
                     })
+
                     .then(function (csvBlob) {
+
                         if (!csvBlob
                             || csvBlob.size === 0) {
 
                             throw new Error(
-                                "The server returned "
-                                + "an empty CSV."
+                                "The processing service "
+                                + "returned an empty CSV."
                             );
                         }
 
@@ -523,20 +718,25 @@
                         showBatchStatus(
                             statusBox,
                             "success",
-                            "Processing completed. "
+                            "Processing complete. "
                             + "output_claims.csv "
                             + "has been downloaded."
                         );
                     })
+
                     .catch(function (error) {
+
                         showBatchStatus(
                             statusBox,
                             "error",
                             error.message
                         );
                     })
+
                     .finally(function () {
-                        processButton.disabled = false;
+
+                        processButton.disabled =
+                            false;
 
                         processButton.textContent =
                             "Process and Download CSV";
@@ -545,35 +745,12 @@
         );
     }
 
-    function downloadBlob(blob, fileName) {
-        var downloadUrl =
-            URL.createObjectURL(blob);
-
-        var anchor =
-            document.createElement("a");
-
-        anchor.href = downloadUrl;
-        anchor.download = fileName;
-
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-
-        window.setTimeout(
-            function () {
-                URL.revokeObjectURL(
-                    downloadUrl
-                );
-            },
-            1000
-        );
-    }
-
     function showBatchStatus(
         statusBox,
         status,
         message
     ) {
+
         statusBox.classList.remove(
             "hidden",
             "status-ready",
@@ -586,34 +763,106 @@
             "status-" + status
         );
 
-        statusBox.textContent = message;
+        statusBox.textContent =
+            message;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * COMMON UTILITIES
+     * ---------------------------------------------------------
+     */
+
+    function downloadBlob(
+        blob,
+        fileName
+    ) {
+
+        var downloadUrl =
+            URL.createObjectURL(blob);
+
+        var anchor =
+            document.createElement("a");
+
+        anchor.href =
+            downloadUrl;
+
+        anchor.download =
+            fileName;
+
+        document.body.appendChild(
+            anchor
+        );
+
+        anchor.click();
+
+        anchor.remove();
+
+        window.setTimeout(
+            function () {
+
+                URL.revokeObjectURL(
+                    downloadUrl
+                );
+            },
+            1000
+        );
+    }
+
+    function formatAmount(value) {
+
+        var number =
+            Number(value);
+
+        if (!Number.isFinite(number)) {
+            return "0.00";
+        }
+
+        return number.toFixed(2);
     }
 
     function formatFileSize(bytes) {
+
         if (bytes < 1024) {
             return bytes + " bytes";
         }
 
         if (bytes < 1024 * 1024) {
+
             return (
-                bytes / 1024
-            ).toFixed(1) + " KB";
+                    bytes / 1024
+                ).toFixed(1)
+                + " KB";
         }
 
         return (
-            bytes / (1024 * 1024)
-        ).toFixed(1) + " MB";
+                bytes / (
+                    1024 * 1024
+                )
+            ).toFixed(1)
+            + " MB";
     }
 
     function escapeHtml(value) {
+
         var div =
-            document.createElement("div");
+            document.createElement(
+                "div"
+            );
 
         div.textContent =
-            value == null ? "" : String(value);
+            value == null
+                ? ""
+                : String(value);
 
         return div.innerHTML;
     }
+
+    /*
+     * ---------------------------------------------------------
+     * INITIALIZATION
+     * ---------------------------------------------------------
+     */
 
     function initialize() {
         setupTabs();
@@ -621,12 +870,19 @@
         setupBatchProcessing();
     }
 
-    if (document.readyState === "loading") {
+    if (
+        document.readyState
+        === "loading"
+    ) {
+
         document.addEventListener(
             "DOMContentLoaded",
             initialize
         );
+
     } else {
+
         initialize();
     }
+
 })();
